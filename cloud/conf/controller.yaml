@@ -8,10 +8,11 @@ controller:
     node_update_frequency: 10
     kubeconfig: ""   #Enter path to kubeconfig file to enable https connection to k8s apiserver
 cloudhub:
-  protocol_websocket: true # enable websocket protocol
+  protocol_websocket: false # enable websocket protocol
   port: 10000 # open port for websocket server
-  protocol_quic: true # enable quic protocol
+  protocol_quic: false # enable quic protocol
   quic_port: 10001 # open prot for quic server
+  protocol_grpc: true
   max_incomingstreams: 10000 # the max incoming stream for quic server
   address: 0.0.0.0
   ca: /etc/kubeedge/ca/rootCA.crt

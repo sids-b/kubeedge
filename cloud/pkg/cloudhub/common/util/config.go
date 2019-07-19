@@ -14,7 +14,7 @@ func init() {
 	if !HubConfig.ProtocolWebsocket && !HubConfig.ProtocolQuic {
 		HubConfig.ProtocolWebsocket = true
 	}
-
+	HubConfig.ProtocolGRPC,_=config.CONFIG.GetValue("cloudhub.protocol_grpc").ToBool()
 	HubConfig.Address, _ = config.CONFIG.GetValue("cloudhub.address").ToString()
 	HubConfig.Port, _ = config.CONFIG.GetValue("cloudhub.port").ToInt()
 	HubConfig.QuicPort, _ = config.CONFIG.GetValue("cloudhub.quic_port").ToInt()
@@ -28,6 +28,7 @@ func init() {
 type Config struct {
 	ProtocolWebsocket  bool
 	ProtocolQuic       bool
+	ProtocolGRPC       bool
 	MaxIncomingStreams int
 	Address            string
 	Port               int

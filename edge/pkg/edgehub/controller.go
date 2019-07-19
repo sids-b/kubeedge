@@ -1,7 +1,11 @@
 package edgehub
 
 import (
+	gocontext "context"
 	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"io/ioutil"
 	"net/http"
 	"sync"
@@ -11,6 +15,9 @@ import (
 	"github.com/kubeedge/beehive/pkg/common/log"
 	"github.com/kubeedge/beehive/pkg/core/context"
 	"github.com/kubeedge/beehive/pkg/core/model"
+	emodel "github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/common/model"
+	grpcmessage "github.com/kubeedge/kubeedge/common/grpc/message"
+	"github.com/kubeedge/kubeedge/common/grpc/translator"
 	connect "github.com/kubeedge/kubeedge/edge/pkg/common/cloudconnection"
 	"github.com/kubeedge/kubeedge/edge/pkg/common/message"
 	"github.com/kubeedge/kubeedge/edge/pkg/common/modules"
@@ -88,23 +95,37 @@ func (ehc *Controller) initial(ctx *context.Context) error {
 
 //Start will start EdgeHub
 func (ehc *Controller) Start(ctx *context.Context) {
+	ehc.context=ctx
 	for {
-		err := ehc.initial(ctx)
+		var opts []grpc.DialOption
+		creds, err := credentials.NewClientTLSFromFile("/etc/kubeedge/certs/edge.crt", "kubeedge.io")
 		if err != nil {
-			log.LOGGER.Fatalf("failed to init controller: %v", err)
+			fmt.Println("")
+			fmt.Println("error is here =",err)
+			log.Fatalf("Failed to create TLS credentials %v", err)
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+		conn, err := grpc.Dial("0.0.0.0:10002", opts...)
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+
 			return
 		}
-		err = ehc.chClient.Init()
-		if err != nil {
-			log.LOGGER.Errorf("connection error, try again after 60s: %v", err)
-			time.Sleep(waitConnectionPeriod)
-			continue
+		defer conn.Close()
+		client := grpcmessage.NewRouteMessageClient(conn)
+		md := metadata.Pairs(emodel.ProjectID, ehc.config.ProjectID, emodel.NodeID, ehc.config.NodeID)
+		ctx := metadata.NewOutgoingContext(gocontext.Background(), md)
+		stream, err := client.RouteMessages(ctx)
+		if err != nil{
+			fmt.Println("")
+			fmt.Println("error =",err)
 		}
 		// execute hook func after connect
 		ehc.pubConnectInfo(true)
-		go ehc.routeToEdge()
-		go ehc.routeToCloud()
-		go ehc.keepalive()
+
+		go ehc.routeToEdge(stream)
+		go ehc.routeToCloud(stream)
+		//go ehc.keepalive()
 
 		// wait the stop singal
 		// stop authinfo manager/websocket connection
@@ -187,17 +208,16 @@ func (ehc *Controller) dispatch(message model.Message) error {
 	return ehc.sendToKeepChannel(message)
 }
 
-func (ehc *Controller) routeToEdge() {
+func (ehc *Controller) routeToEdge(stream grpcmessage.RouteMessage_RouteMessagesClient) {
 	for {
-		message, err := ehc.chClient.Receive()
+		pb, err := stream.Recv()
 		if err != nil {
-			log.LOGGER.Errorf("websocket read error: %v", err)
-			ehc.stopChan <- struct{}{}
-			return
+			continue
 		}
 
-		log.LOGGER.Infof("received msg from cloud-hub:%+v", message)
-		err = ehc.dispatch(message)
+		msg := &model.Message{}
+		translator.NewTranslator().ProtoToModel(pb, msg)
+		err = ehc.dispatch(*msg)
 		if err != nil {
 			log.LOGGER.Errorf("failed to dispatch message, discard: %v", err)
 		}
@@ -232,22 +252,42 @@ func (ehc *Controller) sendToCloud(message model.Message) error {
 	return nil
 }
 
-func (ehc *Controller) routeToCloud() {
+func (ehc *Controller) routeToCloud(stream grpcmessage.RouteMessage_RouteMessagesClient) {
 	for {
-		message, err := ehc.context.Receive(ModuleNameEdgeHub)
+		msg, err := ehc.context.Receive(ModuleNameEdgeHub)
 		if err != nil {
 			log.LOGGER.Errorf("failed to receive message from edge: %v", err)
 			time.Sleep(time.Second)
 			continue
 		}
 
+		pb := &grpcmessage.Message{}
+		pb.Header=&grpcmessage.MessageHeader{}
+		pb.Router=&grpcmessage.MessageRouter{}
+		translator.NewTranslator().ModelToProto(&msg, pb)
 		// post message to cloud hub
-		err = ehc.sendToCloud(message)
+		err = stream.Send(pb)
 		if err != nil {
-			log.LOGGER.Errorf("failed to send message to cloud: %v", err)
-			ehc.stopChan <- struct{}{}
-			return
+			continue
 		}
+		syncKeep := func(message model.Message) {
+			tempChannel := ehc.addKeepChannel(message.GetID())
+			sendTimer := time.NewTimer(ehc.config.HeartbeatPeriod)
+			select {
+			case response := <-tempChannel:
+				sendTimer.Stop()
+				ehc.context.SendResp(response)
+				ehc.deleteKeepChannel(response.GetParentID())
+			case <-sendTimer.C:
+				log.LOGGER.Warnf("timeout to receive response for message: %+v", message)
+				ehc.deleteKeepChannel(message.GetID())
+			}
+		}
+
+		if msg.IsSync() {
+			go syncKeep(msg)
+		}
+
 	}
 }
 
@@ -274,9 +314,9 @@ func (ehc *Controller) pubConnectInfo(isConnected bool) {
 	}
 
 	for _, group := range groupMap {
-		message := model.NewMessage("").BuildRouter(message.SourceNodeConnection, group,
+		msg := model.NewMessage("").BuildRouter(message.SourceNodeConnection, group,
 			message.ResourceTypeNodeConnection, message.OperationNodeConnection).FillBody(content)
-		ehc.context.Send2Group(group, *message)
+		ehc.context.Send2Group(group, *msg)
 	}
 }
 

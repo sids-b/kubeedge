@@ -5,6 +5,7 @@ import (
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/channelq"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/common/util"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/handler"
+	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/servers/grpcserver"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/servers/quicserver"
 	"github.com/kubeedge/kubeedge/cloud/pkg/cloudhub/servers/wsserver"
 )
@@ -12,6 +13,7 @@ import (
 const (
 	ProtocolWebsocket = "websocket"
 	ProtocolQuic      = "quic"
+	ProtocolGRPC      = "grpc"
 )
 
 func StartCloudHub(protocol string, eventq *channelq.ChannelEventQueue, c *context.Context) {
@@ -22,6 +24,8 @@ func StartCloudHub(protocol string, eventq *channelq.ChannelEventQueue, c *conte
 	case ProtocolQuic:
 		quicserver.StartCloudHub(util.HubConfig, eventq)
 		handler.QuicHandler.EventHandler.Context = c
+	case ProtocolGRPC:
+		grpcserver.StartCloudHub(util.HubConfig, eventq)
 	default:
 		panic("invalid protocol, should be websocket or quic")
 	}

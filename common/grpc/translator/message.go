@@ -17,7 +17,7 @@ func NewTranslator() *MessageTranslator {
 	return &MessageTranslator{}
 }
 
-func (t *MessageTranslator) protoToModel(src *message.Message, dst *model.Message) error {
+func (t *MessageTranslator) ProtoToModel(src *message.Message, dst *model.Message) error {
 	dst.BuildHeader(src.Header.ID, src.Header.ParentID, int64(src.Header.Timestamp)).
 		BuildRouter(src.Router.Source, src.Router.Group, src.Router.Resouce, src.Router.Operaion).
 		FillBody(src.Content)
@@ -28,7 +28,7 @@ func (t *MessageTranslator) protoToModel(src *message.Message, dst *model.Messag
 	return nil
 }
 
-func (t *MessageTranslator) modelToProto(src *model.Message, dst *message.Message) error {
+func (t *MessageTranslator) ModelToProto(src *model.Message, dst *message.Message) error {
 	dst.Header.ID = src.GetID()
 	dst.Header.ParentID = src.GetParentID()
 	dst.Header.Timestamp = int64(src.GetTimestamp())
@@ -67,7 +67,7 @@ func (t *MessageTranslator) Decode(raw []byte, msg interface{}) error {
 		log.LOGGER.Errorf("failed to unmarshal payload")
 		return err
 	}
-	t.protoToModel(&protoMessage, modelMessage)
+	t.ProtoToModel(&protoMessage, modelMessage)
 	return nil
 }
 
@@ -82,7 +82,7 @@ func (t *MessageTranslator) Encode(msg interface{}) ([]byte, error) {
 		Router: &message.MessageRouter{},
 	}
 
-	err := t.modelToProto(modelMessage, &protoMessage)
+	err := t.ModelToProto(modelMessage, &protoMessage)
 	if err != nil {
 		log.LOGGER.Errorf("failed to copy message")
 		return nil, err

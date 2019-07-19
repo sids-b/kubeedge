@@ -46,6 +46,9 @@ func (a *cloudHub) Start(c *context.Context) {
 		go servers.StartCloudHub(servers.ProtocolQuic, eventq, c)
 	}
 
+	if util.HubConfig.ProtocolGRPC {
+		go servers.StartCloudHub(servers.ProtocolGRPC, eventq, c)
+	}
 	stopchan := make(chan bool)
 	<-stopchan
 }
