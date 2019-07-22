@@ -95,17 +95,17 @@ func (ehc *Controller) initial(ctx *context.Context) error {
 
 //Start will start EdgeHub
 func (ehc *Controller) Start(ctx *context.Context) {
-	ehc.context=ctx
+	ehc.context = ctx
 	for {
 		var opts []grpc.DialOption
 		creds, err := credentials.NewClientTLSFromFile("/etc/kubeedge/certs/edge.crt", "kubeedge.io")
 		if err != nil {
-			fmt.Println("")
-			fmt.Println("error is here =",err)
 			log.Fatalf("Failed to create TLS credentials %v", err)
+			return
 		}
 		opts = append(opts, grpc.WithTransportCredentials(creds))
-		conn, err := grpc.Dial("0.0.0.0:10002", opts...)
+		url, _ := bhconfig.CONFIG.GetValue("edgehub.grpc.url").ToString()
+		conn, err := grpc.Dial(url, opts...)
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 
@@ -116,9 +116,8 @@ func (ehc *Controller) Start(ctx *context.Context) {
 		md := metadata.Pairs(emodel.ProjectID, ehc.config.ProjectID, emodel.NodeID, ehc.config.NodeID)
 		ctx := metadata.NewOutgoingContext(gocontext.Background(), md)
 		stream, err := client.RouteMessages(ctx)
-		if err != nil{
-			fmt.Println("")
-			fmt.Println("error =",err)
+		if err != nil {
+			return
 		}
 		// execute hook func after connect
 		ehc.pubConnectInfo(true)
@@ -262,8 +261,8 @@ func (ehc *Controller) routeToCloud(stream grpcmessage.RouteMessage_RouteMessage
 		}
 
 		pb := &grpcmessage.Message{}
-		pb.Header=&grpcmessage.MessageHeader{}
-		pb.Router=&grpcmessage.MessageRouter{}
+		pb.Header = &grpcmessage.MessageHeader{}
+		pb.Router = &grpcmessage.MessageRouter{}
 		translator.NewTranslator().ModelToProto(&msg, pb)
 		// post message to cloud hub
 		err = stream.Send(pb)
